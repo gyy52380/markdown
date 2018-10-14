@@ -327,12 +327,12 @@ u8 consume(String* string, umm amount)
 {
     DebugAssert(amount <= string->length);
 
-    u8 return_byte = *(string->data);
+    u8 return_first_byte = *(string->data);
 
     string->data += amount;
     string->length -= amount;
 
-    return return_byte;
+    return return_first_byte;
 }
 
 void consume_whitespace(String* string)
@@ -397,7 +397,7 @@ String consume_until_whitespace(String* string)
 }
 
 
-String trim(String string)
+String ewltrim(String string)
 {
     while (string && is_whitespace(string[0]))
         consume(&string, 1);

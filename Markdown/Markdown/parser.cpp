@@ -13,43 +13,162 @@
 	constexpr 	LK_Region* temp = &temporary_memory;
 #endif
 
+u32 count_leading_whitespace(String string)
+{
+	u32 counter = 0;
+	for (int i = 0; i < string.length; i++)
+	{
+		if (is_whitespace(string[i]))
+			counter++;
+		else
+			break;
+	}
+	return counter;
+}
+
+enum String_Label
+	{
+		ST_UNKNOWN,
+		ST_HTML_TAG,
+		ST_META_TAG,
+		ST_TEXT
+	};
+
+struct Labeled_String
+{
+	String_Label type;
+	String value;
+};
 
 struct Parse_Context
 {
-	bool parsing = true;
+	
 
-	struct
-	{
-		bool p 		: 1;
+	SList<Labeled_String> paragraph_list; // consists of <p>, <h>, <ul>, <il>, <li> tags and "other text"
+	SList<String> 			output_list; // used to construct output string
 
-		bool h1 	: 1;
-		bool h2 	: 1;
-		bool h3 	: 1;
-		bool h4 	: 1;
-		bool h5 	: 1;
-		bool h6 	: 1;
-
-		bool bold 	: 1;
-		bool italic : 1;
-	} open;
-
-	struct
-	{
-		u8 newline;
-		u8 asterix;
-		u8 equals;
-		u8 hashtag;
-	} conescutive;
 
 	String input; // input string
+	String output; // return
 	String input_cursor; // moves along input
 	String temp_string; //temporary substring of input
 
-	SList<String> paragraph_list; // ` "<p>"->"text"->"</p>"->... `
-	SList<String> output_list; // used to construct output string
 
-	String output; // return
+	bool p_tag_open;
+	bool blockquote_tag_open;	
+	bool header_tag_open[6];
+	bool any_list_tag_open;
+
+	u32 indent_level;
 };
+
+
+static const Labeled_String tag_begin_p  = {ST_HTML_TAG, "<p>"_s};
+static const Labeled_String tag_end_p = {ST_HTML_TAG, "</p>"_s};
+static const Labeled_String tag_begin_blockquote  = {ST_HTML_TAG, "<blockquote>"_s};
+static const Labeled_String tag_end_blockquote = {ST_HTML_TAG, "</blockquote>"_s};
+static const Labeled_String tag_begin_ul = {ST_HTML_TAG, "<ul>"_s};
+static const Labeled_String tag_end_ul = {ST_HTML_TAG, "</ul>"_s};
+
+static const Labeled_String tag_open_h[6] =
+{
+	{ ST_HTML_TAG, "<h1>"_s },
+	{ ST_HTML_TAG, "<h2>"_s },
+	{ ST_HTML_TAG, "<h3>"_s },
+	{ ST_HTML_TAG, "<h4>"_s },
+	{ ST_HTML_TAG, "<h5>"_s },
+	{ ST_HTML_TAG, "<h6>"_s }
+};
+
+static const Labeled_String tag_close_h[6] =
+{
+	{ ST_HTML_TAG, "</h1>"_s },
+	{ ST_HTML_TAG, "</h2>"_s },
+	{ ST_HTML_TAG, "</h3>"_s },
+	{ ST_HTML_TAG, "</h4>"_s },
+	{ ST_HTML_TAG, "</h5>"_s },
+	{ ST_HTML_TAG, "</h6>"_s }
+};
+
+// closes all open <p>, <blockquote>, <h_>, and only the top level <ul>, <il> tags
+void close_all_open_top_level_tags(Parse_Context *ctx)
+{
+	if (ctx->p_tag_open)
+	{
+		ctx->p_tag_open = false;
+		ctx->paragraph_list.append(tag_end_p);
+	}
+
+	for (int i = 0; i < 6; i++)
+	{
+		if (ctx->header_tag_open[i])
+		{
+			ctx->header_tag_open[i] = false;
+			ctx->paragraph_list.append(tag_close_h[i]);
+		}
+	}
+
+	if (ctx->any_list_tag_open)
+	{
+		ctx->paragraph_list.append(tag_end_ul);
+		ctx->any_list_tag_open = false;
+		ctx->indent_level = 0;
+	}
+}
+
+// call whenever a new paragraph or header or blockquote may begin
+// this usually gets fed the line after two newlines
+void new_section_begin(Parse_Context *ctx, String first_line_of_section)
+{
+	// untrimmed version is used to check indent levels in lists
+	String trimmed_line = trim(first_line_of_section);
+
+	close_all_open_top_level_tags(ctx);
+
+
+	/////////
+	// first try to find a header
+	////////
+
+	i8 header_level = -1;	// can be h1 to h6 (0 to 5 indexed)
+	while (header_level < 6)
+	{
+		if (trimmed_line[header_level] == '#')
+			header_level++;
+		else
+			break;
+	}
+	if (header_level >= 0)
+	{
+		ctx->header_tag_open[header_level] = true;
+		ctx->paragraph_list.append(tag_open_h[header_level]);
+		return;
+	}
+
+
+	////////
+	// no header openers found
+	// look for list beginning (TODO ordered lists)
+	////////
+
+	if (prefix_equals(trimmed_line, "- "_s) ||
+		prefix_equals(trimmed_line, "* "_s))
+	{
+		ctx->any_list_tag_open = true;
+		ctx->indent_level = count_leading_whitespace(first_line_of_section) / 4 + 1;
+		ctx->paragraph_list.append(tag_begin_ul);
+		return;
+	}
+
+
+	////////
+	// no list tag found
+	// section must be a paragraph
+	////////
+
+	ctx->p_tag_open = true;
+	ctx->paragraph_list.append(tag_begin_p);
+}
 
 String parse(String input)
 {
@@ -58,135 +177,21 @@ String parse(String input)
 
 	ctx.input_cursor = ctx.input;
 
-	// decide if first paragraph is p or h
-	String first_line = trim(consume_line(&ctx.input_cursor));
-
-	if (first_line[0] != '#')
-	{
-		ctx.paragraph_list.append("<p>"_s);
-		ctx.open.p = true;
-	}
-	else if (prefix_equals(first_line, "######"_s))
-	{
-		ctx.paragraph_list.append("<h6>"_s);
-		ctx.open.h6 = true;
-	}
-	else if (prefix_equals(first_line, "#####"_s))
-	{
-		ctx.paragraph_list.append("<h5>"_s);
-		ctx.open.h5 = true;
-	}
-	else if (prefix_equals(first_line, "####"_s))
-	{
-		ctx.paragraph_list.append("<h4>"_s);
-		ctx.open.h4 = true;
-	}
-	else if (prefix_equals(first_line, "###"_s))
-	{
-		ctx.paragraph_list.append("<h3>"_s);
-		ctx.open.h3 = true;
-	}
-	else if (prefix_equals(first_line, "##"_s))
-	{
-		ctx.paragraph_list.append("<h2>"_s);
-		ctx.open.h2 = true;
-	}
-	else
-	{
-		ctx.paragraph_list.append("<h1>"_s);
-		ctx.open.h1 = true;
-	}
-
-
+	// decide what kind of section is the first line
+	String line1 = consume_line(&ctx.input_cursor);
+	String line2 = consume_line(&ctx.input_cursor);
+	new_section_begin(&ctx, line1);
 
 	while (ctx.input_cursor)
 	{
-		String line = trim(consume_line(&ctx.input_cursor);
+		line1 = line2;
+		line2 = consume_line(&ctx.input_cursor);
+
+
+		if (trim(line1) == "\n"_s) // new paragraph begins
+			new_section_begin(&ctx, line2);
+
+		
+
 	}
-}
-
-
-void add_to_text_block(Parse_Context *ctx)
-{
-	if (ctx->plaintext_block)
-	{
-		if (ctx->plaintext_block.length == ctx->input.length)
-		{
-			printf("EOF.\n");
-			return;
-		}
-
-		ctx->plaintext_block.length++;
-	}
-	else
-	{
-		ctx->plaintext_block.data 	= ctx->input_cursor.data;
-		ctx->plaintext_block.length = 1;
-	}
-}
-
-void finish_current_text_block(Parse_Context *ctx)
-{
-	if (ctx->plaintext_block)
-	{
-		list_append(&ctx->output_list, ctx->plaintext_block);
-		ctx->plaintext_block.data = NULL;
-		ctx->plaintext_block.length = 0;
-	}
-}
-
-
-void parse_newline(Parse_Context *ctx)
-{
-
-}
-
-void parse_backslash(Parse_Context *ctx)
-{
-
-}
-
-void parse_hashtag(Parse_Context *ctx)
-{
-
-}
-
-void parse_asterix(Parse_Context *ctx)
-{
-
-}
-
-void parse_underscore(Parse_Context *ctx)
-{
-
-}
-
-void parse_dash(Parse_Context *ctx)
-{
-
-}
-
-void parse_equals(Parse_Context *ctx)
-{
-
-}
-
-void parse_brace_l(Parse_Context *ctx)
-{
-
-}
-
-void parse_brace_r(Parse_Context *ctx)
-{
-
-}
-
-void parse_square_brace_l(Parse_Context *ctx)
-{
-
-}
-
-void parse_square_brace_r(Parse_Context *ctx)
-{
-
 }

@@ -87,6 +87,8 @@ bool suffix_equals(String string, String suffix);
 
 constexpr umm NOT_FOUND = ~(umm) 0;
 
+bool is_whitespace(u8 character);
+
 umm find_first_occurance(String string, u8 character);
 umm find_first_occurance(String string, String characters);
 

@@ -6,9 +6,12 @@
 #include "lk_region.h"
 #include "list.h"
 
+#include "parser.h"
+
 #define DebugAssert(test) assert(test)
 
-#if !(temp)
+#ifndef TEMPORARY_MEMORY
+#define TEMPORARY_MEMORY
 	extern 		LK_Region temporary_memory;
 	constexpr 	LK_Region* temp = &temporary_memory;
 #endif
@@ -44,8 +47,8 @@ struct Parse_Context
 {
 	
 
-	SList<Labeled_String> section_list; // consists of <p>, <h>, <ul>, <il>, <li> tags and "other text"
-	SList<String> 			output_list; // used to construct output string
+	SLList<Labeled_String> section_list; // consists of <p>, <h>, <ul>, <il>, <li> tags and "other text"
+	SLList<String> 			output_list; // used to construct output string
 
 
 	String input; // input string
@@ -54,19 +57,17 @@ struct Parse_Context
 	String temp_string; //temporary substring of input
 
 
-	bool p_tag_open;
-	bool blockquote_tag_open;	
-	bool header_tag_open[6];
-	bool any_list_tag_open;
+	bool p_tag_open = false;
+	bool blockquote_tag_open = false;	
+	bool header_tag_open[6] = {};
+	bool any_list_tag_open = false;
 
-	u32 indent_level;
+	u32 indent_level = 0;
 };
 
 
 static const Labeled_String tag_begin_p 			= {ST_HTML_TAG, "<p>"_s};
 static const Labeled_String tag_end_p 				= {ST_HTML_TAG, "</p>"_s};
-static const Labeled_String tag_begin_blockquote  	= {ST_HTML_TAG, "<blockquote>"_s};
-static const Labeled_String tag_end_blockquote 		= {ST_HTML_TAG, "</blockquote>"_s};
 static const Labeled_String tag_begin_ul 			= {ST_HTML_TAG, "<ul>"_s};
 static const Labeled_String tag_end_ul 				= {ST_HTML_TAG, "</ul>"_s};
 static const Labeled_String tag_begin_li 			= {ST_HTML_TAG, "<li>"_s};
@@ -112,12 +113,13 @@ void close_all_open_top_level_tags(Parse_Context *ctx)
 
 	if (ctx->any_list_tag_open)
 	{
-		while (ctx->indent_level > 1)
+		while (ctx->indent_level > 0)
 		{
 			ctx->indent_level--;
-			ctx->section_list.append(tag_end_ul);
 			ctx->section_list.append(tag_end_li);
+			ctx->section_list.append(tag_end_ul);
 		}
+		ctx->section_list.append(tag_end_li);
 		ctx->section_list.append(tag_end_ul);
 
 		ctx->any_list_tag_open = false;
@@ -129,6 +131,8 @@ void close_all_open_top_level_tags(Parse_Context *ctx)
 // this usually gets fed the line after two newlines
 void new_section_begin(Parse_Context *ctx, String first_line_of_section)
 {
+	if (!first_line_of_section) return;
+
 	// untrimmed version is used to check indent levels in lists
 	String trimmed_line = trim(first_line_of_section);
 
@@ -139,16 +143,18 @@ void new_section_begin(Parse_Context *ctx, String first_line_of_section)
 	// first try to find a header
 	////////
 
-	i8 header_level = -1;	// can be h1 to h6 (0 to 5 indexed)
-	while (header_level < 6)
+	i8 header_level = 0;	// can be h1 to h6
+	while (header_level < trimmed_line.length)
 	{
 		if (trimmed_line[header_level] == '#')
-			header_level++;
+			header_level++; // this can make header_level into 7
 		else
 			break;
 	}
-	if (header_level >= 0)
+	header_level = header_level > 6 ? 6 : header_level; // if header_level == 7, make it 6
+	if (header_level > 0)
 	{
+		header_level--; //string tag arrays are 0..5 indexed, offset by -1
 		ctx->header_tag_open[header_level] = true;
 		ctx->section_list.append(tag_open_h[header_level]);
 		return;
@@ -190,57 +196,80 @@ void try_add_list_element(Parse_Context *ctx, String line)
 	{
 		u32 line_indent_level = count_leading_whitespace(line) / 4 + 1;
 
-		if (line_indent_level > ctx->indent_level)
+		if (line_indent_level == ctx->indent_level) // if same indent level as last line, close the last <li> tag
 		{
-			for (int i = 0; i < line_indent_level - ctx->indent_level; i++)
-			{
-				ctx->section_list.append(tag_begin_li);
-				ctx->section_list.append(tag_begin_ul);
-			}
+			ctx->section_list.append(tag_end_li);
+			ctx->section_list.append(tag_begin_li);
 		}
-		else if (line_indent_level < ctx->indent_level)
+		else
 		{
-			for (int i = 0; i < ctx->indent_level - line_indent_level; i++)
+			if (line_indent_level > ctx->indent_level)
 			{
+				for (int i = 0; i < line_indent_level - ctx->indent_level; i++)
+				{
+					ctx->section_list.append(tag_begin_ul);
+					ctx->section_list.append(tag_begin_li);
+				}
+			}
+			else if (line_indent_level < ctx->indent_level)
+			{
+				for (int i = 0; i < ctx->indent_level - line_indent_level; i++)
+				{
+					ctx->section_list.append(tag_end_li);
+					ctx->section_list.append(tag_end_ul);
+				}
 				ctx->section_list.append(tag_end_li);
-				ctx->section_list.append(tag_end_ul);
+				ctx->section_list.append(tag_begin_li);
 			}
+			ctx->indent_level = line_indent_level;
 		}
+		//ctx->section_list.append(tag_begin_li);
 
-		ctx->section_list.append(tag_begin_li);
-
-		String trimmed_text = substring(trimmed_line, 3, trimmed_line.length - 3);
+		String trimmed_text = substring(trimmed_line, 2, trimmed_line.length - 2);
 		Labeled_String text = {ST_TEXT, trimmed_text};
 		ctx->section_list.append(text);
 
-		ctx->section_list.append(tag_end_li);
-
-		ctx->indent_level = line_indent_level;
+		//ctx->section_list.append(tag_end_li);
 	}
 }
 
 String parse(String input)
 {
 	Parse_Context ctx;
-	ctx.input = input;
 
-	ctx.input_cursor = ctx.input;
+	String input_cursor = input;
 
 	// decide what kind of section is the first line
-	String line1 = consume_line(&ctx.input_cursor);
-	String line2 = consume_line(&ctx.input_cursor);
-	new_section_begin(&ctx, line1);
+	// by adding a "0th" line before the first
+	String line1 = ""_s;
+	String line2 = consume_line_preserve_whitespace(&input_cursor);
+	new_section_begin(&ctx, line2);
 
-	while (ctx.input_cursor)
+	while (true)
 	{
 		line1 = line2;
-		line2 = consume_line(&ctx.input_cursor);
+		line2 = consume_line_preserve_whitespace(&input_cursor);
 
 
-		if (trim(line1) == "\n"_s) // new paragraph begins
+		if (line1 == ""_s) // if line1 is only a newline: new paragraph begins
+		{
 			new_section_begin(&ctx, line2);
+			continue;
+		}
 
 		if (ctx.any_list_tag_open)
 			try_add_list_element(&ctx, line1);
+		else
+			ctx.section_list.append({ST_TEXT, line1});
+
+		if (!input_cursor) break;
 	}
+	close_all_open_top_level_tags(&ctx);
+
+	for (auto *node = ctx.section_list.head; node != NULL; node = node->next)
+	{
+		printf("%.*s", StringArgs(node->value.value));
+	}
+
+	return ""_s;
 }

@@ -81,6 +81,7 @@ static String line_ending_chars = "\n\r"_s;
 static String whitespace_chars = " \t\n\r"_s;
 static String slash_chars = "/\\"_s;
 
+
 bool is_whitespace(u8 character)
 {
     if (character == ' ')  return true;
@@ -90,7 +91,6 @@ bool is_whitespace(u8 character)
 
     return false;
 }
-
 
 umm length_of_c_style_string(const char* c_string)
 {
@@ -302,14 +302,14 @@ u32 compute_crc32(String data)
     for (umm i = 0; i < data.length; i++)
     {
         crc = crc ^ data.data[i];
-        crc = (crc >> 1) ^ (0xedb88320 & -(crc & 1));
-        crc = (crc >> 1) ^ (0xedb88320 & -(crc & 1));
-        crc = (crc >> 1) ^ (0xedb88320 & -(crc & 1));
-        crc = (crc >> 1) ^ (0xedb88320 & -(crc & 1));
-        crc = (crc >> 1) ^ (0xedb88320 & -(crc & 1));
-        crc = (crc >> 1) ^ (0xedb88320 & -(crc & 1));
-        crc = (crc >> 1) ^ (0xedb88320 & -(crc & 1));
-        crc = (crc >> 1) ^ (0xedb88320 & -(crc & 1));
+        crc = (crc >> 1) ^ (0xedb88320 & -(i32)(crc & 1));
+        crc = (crc >> 1) ^ (0xedb88320 & -(i32)(crc & 1));
+        crc = (crc >> 1) ^ (0xedb88320 & -(i32)(crc & 1));
+        crc = (crc >> 1) ^ (0xedb88320 & -(i32)(crc & 1));
+        crc = (crc >> 1) ^ (0xedb88320 & -(i32)(crc & 1));
+        crc = (crc >> 1) ^ (0xedb88320 & -(i32)(crc & 1));
+        crc = (crc >> 1) ^ (0xedb88320 & -(i32)(crc & 1));
+        crc = (crc >> 1) ^ (0xedb88320 & -(i32)(crc & 1));
     }
 
     return ~crc;
@@ -335,6 +335,15 @@ u8 consume(String* string, umm amount)
     return return_first_byte;
 }
 
+String trim(String string)
+{
+    while (string && is_whitespace(string[0]))
+        consume(&string, 1);
+    while (string && is_whitespace(string[string.length - 1]))
+        string.length--;
+    return string;
+}
+
 void consume_whitespace(String* string)
 {
     while (*string && is_whitespace(string->data[0]))
@@ -351,6 +360,33 @@ String consume_line(String* string)
 
     String line = substring(*string, 0, line_length);
     consume(string, line_length);
+
+    return line;
+}
+
+String consume_line_preserve_whitespace(String* string)
+{
+    umm line_length = find_first_occurance(*string, "\n\r"_s);
+    if (line_length == NOT_FOUND)
+        line_length = string->length;
+
+    String line = substring(*string, 0, line_length);
+    consume(string, line_length);
+
+    // If we've found the line ending, consume it.
+    if (*string)
+    {
+        umm ending_length = 1;
+        if (string->length > 1)
+        {
+            // Handle two-byte line endings.
+            char c1 = string->data[0];
+            char c2 = string->data[1];
+            if ((c1 == '\n' && c2 == '\r') || (c1 == '\r' && c2 == '\n'))
+                ending_length++;
+        }
+        consume(string, ending_length);
+    }
 
     return line;
 }

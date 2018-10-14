@@ -18,6 +18,18 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="list.h" />
+    <ClInclude Include="lk_region.h" />
+    <ClInclude Include="parser.h" />
+    <ClInclude Include="string.h" />
+    <ClInclude Include="typedef.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="parser.cpp" />
+    <ClCompile Include="string.cpp" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{48A2A55A-50C1-4A80-A85B-3FFA838F5242}</ProjectGuid>
@@ -146,14 +158,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="Markdown.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="lk_region.h" />
-    <ClInclude Include="string.h" />
-    <ClInclude Include="typedef.h" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

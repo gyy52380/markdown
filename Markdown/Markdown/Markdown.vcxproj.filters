@@ -11,19 +11,31 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Markdown.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
+    <ClInclude Include="list.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="lk_region.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="typedef.h">
+    <ClInclude Include="parser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="string.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="typedef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="parser.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="string.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

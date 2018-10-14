@@ -8,8 +8,11 @@
 #define DebugAssert(test) assert(test)
 
 
-extern 		LK_Region temporary_memory;
-constexpr 	LK_Region* temp = &temporary_memory;
+#ifndef TEMPORARY_MEMORY
+#define TEMPORARY_MEMORY
+    extern      LK_Region temporary_memory;
+    constexpr   LK_Region* temp = &temporary_memory;
+#endif
 
 
 
@@ -109,6 +112,7 @@ u8 consume(String* string, umm amount);
 void consume_whitespace(String* string);
 
 String consume_line(String* string);
+String consume_line_preserve_whitespace(String* string);
 String consume_until(String* string, u8 until_what);
 String consume_until(String* string, String until_what);
 String consume_until_whitespace(String* string);

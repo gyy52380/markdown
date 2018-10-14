@@ -5,26 +5,27 @@
 
 #define DebugAssert(test) assert(test)
 
-#if !(temp)
+#ifndef TEMPORARY_MEMORY
+#define TEMPORARY_MEMORY
 	extern 		LK_Region temporary_memory;
 	constexpr 	LK_Region* temp = &temporary_memory;
 #endif
 
 template <typename T>
-struct SList
+struct SLList
 {
-	struct SList_Node
+	struct SLList_Node
 	{
-		SList_Node *next = NULL;
+		SLList_Node *next;
 		T value;
 	};
 
-	SList_Node *head = NULL;
-	SList_Node *tail = NULL;
+	SLList_Node *head = NULL;
+	SLList_Node *tail = NULL;
 
 	void append(T value)
 	{
-		SList_Node *new_node = LK_RegionValue(temp, T);
+		SLList_Node *new_node = LK_RegionValue(temp, SLList_Node);
 		new_node->value = value;
 
 		if (!head) // first element in list

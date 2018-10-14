@@ -63,7 +63,7 @@ extern "C"
 	/* LK_Region struct.
 	You shouldn't need to care about the members of this struct,
 	it is only in the header so that you can allocate it. */
-	typedef LK__REGION_CACHE_ALIGN struct
+	typedef struct LK__REGION_CACHE_ALIGN
 	{
 		uintptr_t page_size;
 		void* page_end;

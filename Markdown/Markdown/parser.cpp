@@ -43,6 +43,12 @@ struct Labeled_String
 	String value;
 };
 
+void print_string_list(SLList<Labeled_String> &list)
+{
+	for (auto *node = list.head; node != NULL; node = node->next)
+		printf("%.*s\n", StringArgs(node->value.value));
+}
+
 struct Parse_Context
 {
 	
@@ -119,8 +125,6 @@ void close_all_open_top_level_tags(Parse_Context *ctx)
 			ctx->section_list.append(tag_end_li);
 			ctx->section_list.append(tag_end_ul);
 		}
-		ctx->section_list.append(tag_end_li);
-		ctx->section_list.append(tag_end_ul);
 
 		ctx->any_list_tag_open = false;
 		ctx->indent_level = 0;
@@ -133,11 +137,7 @@ void new_section_begin(Parse_Context *ctx, String first_line_of_section)
 {
 	if (!first_line_of_section) return;
 
-	// untrimmed version is used to check indent levels in lists
 	String trimmed_line = trim(first_line_of_section);
-
-	close_all_open_top_level_tags(ctx);
-
 
 	/////////
 	// first try to find a header
@@ -169,9 +169,9 @@ void new_section_begin(Parse_Context *ctx, String first_line_of_section)
 	if (prefix_equals(trimmed_line, "- "_s) ||
 		prefix_equals(trimmed_line, "* "_s))
 	{
+		// everything else (indent level, opening top <ul> etc.)
+		// is done in try_add_list_element
 		ctx->any_list_tag_open = true;
-		ctx->indent_level = count_leading_whitespace(first_line_of_section) / 4 + 1;
-		ctx->section_list.append(tag_begin_ul);
 		return;
 	}
 
@@ -185,53 +185,122 @@ void new_section_begin(Parse_Context *ctx, String first_line_of_section)
 	ctx->section_list.append(tag_begin_p);
 }
 
-void try_add_list_element(Parse_Context *ctx, String line)
+bool try_add_list_element(Parse_Context *ctx, String line)
 {
-	// if this function is called a list section is opened
+	/*
+	 * CLARIFICATIONS~
+	 *
+	 * 1) exiting list section with newline
+	 * 	example:
+	 * 		- poop
+	 * 		- boop
+	 * 		  doop // any indent is fine here
+	 *		- loop
+	 * 	
+	 * 	is converted to:
+	 * 		<li> poop </li>
+	 * 		<li> poop doop </li>
+	 *		<li> loop </li>
+	 * 	
+	 * 	to exit list section double newline is needed
+	 * 	(treated like any p or h block)
+	 *
+	 *
+	 * 2) HTML5 and nested lists
+	 *	html nests lists like this
+	 * 		<ul>
+	 *			<li> // <li> tag isnt closed here!!
+	 *			<ul>
+	 *				<li> "im nested!" </li>
+	 *			</ul>
+	 *			</li>
+	 *		</ul>
+	 *
+	 *	every nested <ul> must be inside <li>,
+	 * 	all of the fuckery below is because of that
+	 * 
+	 *
+	 * 3) HTML5 and VERY nested lists
+	 *	while you can make this:
+	 *		* indent level 1
+	 *			* indent level 2
+	 *
+	 *	this wont render correctly:
+	 *		* indent level 1
+	 *				* indent level 3
+	 *	
+	 *	because of that, if the last indent level was n,
+	 * 	and indent level of 'line' is m, m > n
+	 *	n is converted to m + 1
+	 */
+
+
+	if (!ctx->any_list_tag_open)
+		return false;
+
 
 	String trimmed_line = trim(line);
 
-	if (prefix_equals(trimmed_line, "- "_s) ||
-		prefix_equals(trimmed_line, "* "_s))
+	// check for list beginning, and prepare line of text if list begining found
+	// otherwise exit
+	Labeled_String text;
+	if (prefix_equals(trimmed_line, "* "_s) ||
+		prefix_equals(trimmed_line, "- "_s))
 	{
-		u32 line_indent_level = count_leading_whitespace(line) / 4 + 1;
+		String line_without_list_beginning = trim(substring(trimmed_line, 2, trimmed_line.length - 2));
+		text = {ST_TEXT, line_without_list_beginning};
+	}
+	else // line is continuation of last list element (see CLARIFICATION 1)
+	{
+		text = {ST_TEXT, trimmed_line};
+		ctx->section_list.append(text);
+		return true;
+	}
 
-		if (line_indent_level == ctx->indent_level) // if same indent level as last line, close the last <li> tag
-		{
-			ctx->section_list.append(tag_end_li);
-			ctx->section_list.append(tag_begin_li);
-		}
-		else
-		{
-			if (line_indent_level > ctx->indent_level)
-			{
-				for (int i = 0; i < line_indent_level - ctx->indent_level; i++)
-				{
-					ctx->section_list.append(tag_begin_ul);
-					ctx->section_list.append(tag_begin_li);
-				}
-			}
-			else if (line_indent_level < ctx->indent_level)
-			{
-				for (int i = 0; i < ctx->indent_level - line_indent_level; i++)
-				{
-					ctx->section_list.append(tag_end_li);
-					ctx->section_list.append(tag_end_ul);
-				}
-				ctx->section_list.append(tag_end_li);
-				ctx->section_list.append(tag_begin_li);
-			}
-			ctx->indent_level = line_indent_level;
-		}
-		//ctx->section_list.append(tag_begin_li);
 
-		String trimmed_text = substring(trimmed_line, 2, trimmed_line.length - 2);
-		Labeled_String text = {ST_TEXT, trimmed_text};
+	// take care of nested levelness
+	const u32 line_indent_level = count_leading_whitespace(line) / 4 + 1;
+
+	if (line_indent_level > ctx->indent_level)
+	{
+		// see CLARIFICATION 3
+		ctx->section_list.append(tag_begin_ul);
+		ctx->section_list.append(tag_begin_li);
 		ctx->section_list.append(text);
 
-		//ctx->section_list.append(tag_end_li);
+		ctx->indent_level++;
 	}
+	else if (line_indent_level < ctx->indent_level)
+	{
+		// close 'indent_difference' <ul> and <il> tags, + leading <li> tag
+		ctx->section_list.append(tag_end_li);
+
+		const u32 indent_difference = ctx->indent_level - line_indent_level;
+		for (int i = 0; i < indent_difference; i++)
+		{
+			ctx->section_list.append(tag_end_ul);
+			ctx->section_list.append(tag_end_li);
+		}
+		ctx->section_list.append(tag_begin_li);
+		ctx->section_list.append(text);
+
+		ctx->indent_level = line_indent_level;
+	}
+	else // line_indent_level == ctx->indent level
+	{
+		// end last open <li>, open new one, add text
+		// dont end <li> tag because of possible nested lists following
+		// indent level is unchanged
+		ctx->section_list.append(tag_end_li);
+		ctx->section_list.append(tag_begin_li);
+		ctx->section_list.append(text);
+	}
+
+	return true;
 }
+
+
+const String EMPTY_STRING = ""_s; // also signifies a newline line
 
 String parse(String input)
 {
@@ -239,37 +308,47 @@ String parse(String input)
 
 	String input_cursor = input;
 
-	// decide what kind of section is the first line
-	// by adding a "0th" line before the first
-	String line1 = ""_s;
-	String line2 = consume_line_preserve_whitespace(&input_cursor);
-	new_section_begin(&ctx, line2);
 
-	while (true)
+	// TODO:
+	// FIX THIS WHILE LOOP v
+	// strip leading newlines and whitespaces from input
+	// special handle first line of input to determine first section
+
+
+
+	// strip top newline lines
+	while (input_cursor == EMPTY_STRING)
+		consume_line_preserve_whitespace(&input_cursor);
+
+
+
+	String line = ""_s; // line starts empty to decide type of section for actual first line
+	while (input_cursor)
 	{
-		line1 = line2;
-		line2 = consume_line_preserve_whitespace(&input_cursor);
-
-
-		if (line1 == ""_s) // if line1 is only a newline: new paragraph begins
+		if (line == ""_s)
 		{
-			new_section_begin(&ctx, line2);
-			continue;
+			// consume multiple newline lines if they exist
+			// after running the loop sets 'line' to first line of new section
+			while (line == ""_s)
+				line = consume_line_preserve_whitespace(&input_cursor);
+
+			close_all_open_top_level_tags(&ctx);
+			new_section_begin(&ctx, line);
+		}
+		else
+		{
+			line = consume_line_preserve_whitespace(&input_cursor);
 		}
 
-		if (ctx.any_list_tag_open)
-			try_add_list_element(&ctx, line1);
-		else
-			ctx.section_list.append({ST_TEXT, line1});
 
-		if (!input_cursor) break;
+		bool list_el_added = try_add_list_element(&ctx, line);
+
+		if (!list_el_added)
+			ctx.section_list.append({ ST_TEXT, line });
 	}
 	close_all_open_top_level_tags(&ctx);
 
-	for (auto *node = ctx.section_list.head; node != NULL; node = node->next)
-	{
-		printf("%.*s", StringArgs(node->value.value));
-	}
 
+	print_string_list(ctx.section_list);
 	return ""_s;
 }

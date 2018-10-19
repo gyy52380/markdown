@@ -391,6 +391,33 @@ String consume_line_preserve_whitespace(String* string)
     return line;
 }
 
+String scan_line_preserve_whitespace(String string)
+{
+    umm line_length = find_first_occurance(string, "\n\r"_s);
+    if (line_length == NOT_FOUND)
+        line_length = string.length;
+
+    String line = substring(string, 0, line_length);
+    consume(&string, line_length);
+
+    // If we've found the line ending, consume it.
+    if (string)
+    {
+        umm ending_length = 1;
+        if (string.length > 1)
+        {
+            // Handle two-byte line endings.
+            char c1 = string.data[0];
+            char c2 = string.data[1];
+            if ((c1 == '\n' && c2 == '\r') || (c1 == '\r' && c2 == '\n'))
+                ending_length++;
+        }
+        consume(&string, ending_length);
+    }
+
+    return line;
+}
+
 String consume_until(String* string, u8 until_what)
 {
     consume_whitespace(string);

@@ -300,7 +300,6 @@ bool try_add_list_element(Parse_Context *ctx, String line)
 }
 
 
-const String EMPTY_STRING = ""_s; // also signifies a newline line
 
 String parse(String input)
 {
@@ -309,22 +308,17 @@ String parse(String input)
 	String input_cursor = input;
 
 
-	// TODO:
-	// FIX THIS WHILE LOOP v
-	// strip leading newlines and whitespaces from input
-	// special handle first line of input to determine first section
-
-
-
 	// strip top newline lines
-	while (input_cursor == EMPTY_STRING)
+	while (input_cursor == ""_s)
 		consume_line_preserve_whitespace(&input_cursor);
 
+	// open correct section based on first line
+	String line = scan_line_preserve_whitespace(input_cursor);
+	new_section_begin(&ctx, line);
 
-
-	String line = ""_s; // line starts empty to decide type of section for actual first line
 	while (input_cursor)
 	{
+		// open new section if line == "\n"
 		if (line == ""_s)
 		{
 			// consume multiple newline lines if they exist

@@ -165,6 +165,34 @@ String get_file_name_without_extension(String path);
 String get_parent_directory_path(String path);
 
 
+//
+// 16-bit strings. These mostly exist for interfacing with Windows.
+// That's why conversion routines return null terminated strings, and why
+// we don't really support any operations on them.
+//
+
+
+struct String16
+{
+    umm length;
+    u16* data;
+
+    inline u16& operator[](umm index)
+    {
+        DebugAssert(index < length);
+        return data[index];
+    }
+
+    inline operator bool()
+    {
+        return length != 0;
+    }
+};
+
+String16 make_string16(const u16* c_string);    // Allocates. The returned string is null terminated.
+String16 convert_utf8_to_utf16(String string);  // Allocates. The returned string is null terminated.
+String convert_utf16_to_utf8(String16 string);  // Allocates. The returned string is null terminated.
+
 
 //
 // String building utilities.

@@ -3,6 +3,7 @@
 #include "typedef.h"
 #include "string.h"
 #include "parser.h"
+#include "file_io.h"
 
 #define TEMP_MEMORY_IMPLEMENTATION
 #include "memory.h"

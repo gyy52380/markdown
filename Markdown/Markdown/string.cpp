@@ -621,6 +621,240 @@ String get_parent_directory_path(String path)
 
 
 //
+// 16-bit strings. These mostly exist for interfacing with Windows.
+// That's why conversion routines return null terminated strings, and why
+// we don't really support any operations on them.
+//
+
+
+
+static inline bool is_legal_code_point(u32 code_point)
+{
+    if (code_point > 0x10FFFF) return false;
+    if (code_point >= 0xD800 && code_point <= 0xDFFF) return false;
+    return true;
+}
+
+
+static inline u32 get_utf8_sequence_length(u32 code_point)
+{
+    if (code_point <      0x80) return 1;
+    if (code_point <     0x800) return 2;
+    if (code_point <   0x10000) return 3;
+    if (code_point <  0x200000) return 4;
+    if (code_point < 0x4000000) return 5;
+                                return 6;
+}
+
+
+static void encode_utf8_sequence(u32 code_point, u8* target, u32 length)
+{
+    switch (length)
+    {
+    case 6:  target[5] = (u8)((code_point | 0x80) & 0xBF); code_point >>= 6;  // fall-through
+    case 5:  target[4] = (u8)((code_point | 0x80) & 0xBF); code_point >>= 6;  // fall-through
+    case 4:  target[3] = (u8)((code_point | 0x80) & 0xBF); code_point >>= 6;  // fall-through
+    case 3:  target[2] = (u8)((code_point | 0x80) & 0xBF); code_point >>= 6;  // fall-through
+    case 2:  target[1] = (u8)((code_point | 0x80) & 0xBF); code_point >>= 6;  // fall-through
+    }
+
+    static constexpr u8 FIRST_MASK[7] = { 0x00, 0x00, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC };
+    target[0] = (u8)(code_point | FIRST_MASK[length]);
+}
+
+
+static bool decode_utf8_sequence(String* string, u32* out_code_point)
+{
+    umm length = string->length;
+    u8* data = string->data;
+    DebugAssert(length);
+
+    u8 unit1 = data[0];
+    consume(string, 1);
+
+    if (unit1 < 0x80)
+    {
+        *out_code_point = unit1;
+        return true;
+    }
+
+    if (unit1 >= 0x80 && unit1 <= 0xBF)
+        return false;
+
+
+    u32 consume_count = 0;
+    u32 code_point = unit1;
+
+    #define HandleUnit                                  \
+    {                                                   \
+        if (!--length)  return false;                   \
+        u8 unit = data[++consume_count];                \
+        if (unit < 0x80 || unit > 0xBF)  return false;  \
+        code_point = (code_point << 6) + unit;          \
+    }
+
+    if (unit1 >= 0xFC) HandleUnit  // 6 units
+    if (unit1 >= 0xF8) HandleUnit  // 5 units
+    if (unit1 >= 0xF0) HandleUnit  // 4 units
+    if (unit1 >= 0xE0) HandleUnit  // 3 units
+    HandleUnit                     // 2 units
+
+    #undef HandleUnit
+
+
+    static constexpr u32 DECODING_MAGIC[] =
+    {
+        0x00000000,
+        0x00000000, 0x00003080, 0x000E2080,
+        0x03C82080, 0xFA082080, 0x82082080
+    };
+
+    code_point -= DECODING_MAGIC[consume_count + 1];
+    consume(string, consume_count);
+
+    *out_code_point = code_point;
+    return true;
+}
+
+
+static void encode_utf16_sequence(u32 code_point, u16* target, u32 length)
+{
+    if (length == 2)
+    {
+        code_point -= 0x10000;
+        target[0] = 0xD800 + (u16)(code_point >> 10);
+        target[1] = 0xDC00 + (u16)(code_point & 0x3FF);
+        return;
+    }
+
+    target[0] = (u16) code_point;
+}
+
+
+// If this function finds an unpaired surrogate, it will decode it as a
+// code point equal to that surrogate. It is up to the caller to check if
+// the returned value is a legal Unicode code point, if relevant.
+static u32 decode_utf16_sequence(String16* string)
+{
+    DebugAssert(string->length);
+    u32 unit1 = string->data[0];
+    string->data++;
+    string->length--;
+
+    if (unit1 >= 0xD800 && unit1 <= 0xDBFF)
+    {
+        if (!string->length)
+            return unit1;  // Unpaired high surrogate.
+
+        u32 unit2 = string->data[0];
+        if (unit2 < 0xDC00 || unit2 > 0xDFFF)
+            return unit1;  // Unpaired high surrogate.
+
+        string->data++;
+        string->length--;
+        return (((unit1 - 0xD800) << 10) | (unit2 - 0xDC00)) + 0x10000;
+    }
+
+    // Might be an unpaired low surrogate, but it makes no difference.
+    return unit1;
+}
+
+
+static umm convert_utf8_to_utf16(String16* target, String source)
+{
+    umm utf16_length = 0;
+
+    while (source)
+    {
+        u32 code_point;
+        if (!decode_utf8_sequence(&source, &code_point))
+            continue;
+
+        u32 sequence_length = (code_point < 0x10000) ? 1 : 2;
+        if (target)
+        {
+            u16* sequence = target->data + utf16_length;
+            encode_utf16_sequence(code_point, sequence, sequence_length);
+        }
+
+        utf16_length += sequence_length;
+    }
+
+    return utf16_length;
+}
+
+
+static umm convert_utf16_to_utf8(String* target, String16 source)
+{
+    umm utf8_length = 0;
+
+    while (source)
+    {
+        u32 code_point = decode_utf16_sequence(&source);
+
+        u32 sequence_length = get_utf8_sequence_length(code_point);
+        if (target)
+        {
+            u8* sequence = target->data + utf8_length;
+            encode_utf8_sequence(code_point, sequence, sequence_length);
+        }
+
+        utf8_length += sequence_length;
+    }
+
+    return utf8_length;
+}
+
+
+// The returned string is null terminated.
+String16 make_string16(const u16* c_string)
+{
+    umm length = length_of_c_style_string(c_string);
+
+    String16 result;
+    result.length = length;
+    result.data = LK_RegionArray(temp, u16, length + 1);
+
+    copy(result.data, c_string, 2 * (length + 1));
+
+    return result;
+}
+
+// The returned string is null terminated.
+String16 convert_utf8_to_utf16(String string)
+{
+    umm length = convert_utf8_to_utf16(NULL, string);
+
+    String16 string16;
+    string16.length = length;
+    string16.data = LK_RegionArray(temp, u16, length + 1);
+    string16.data[length] = 0;
+
+    length = convert_utf8_to_utf16(&string16, string);
+    DebugAssert(string16.length == length);
+
+    return string16;
+}
+
+// The returned string is null terminated.
+String convert_utf16_to_utf8(String16 string)
+{
+    umm length = convert_utf16_to_utf8(NULL, string);
+
+    String string8;
+    string8.length = length;
+    string8.data = LK_RegionArray(temp, u8, length + 1);
+    string8.data[length] = 0;
+
+    length = convert_utf16_to_utf8(&string8, string);
+    DebugAssert(string8.length == length);
+
+    return string8;
+}
+
+
+
+//
 // String building utilities.
 //
 

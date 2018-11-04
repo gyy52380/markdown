@@ -1,15 +1,8 @@
 #pragma once
 
+#include "memory.h"
 #include "string.h"
 
-
-#define DebugAssert(test) assert(test)
-
-#ifndef TEMPORARY_MEMORY
-#define TEMPORARY_MEMORY
-	extern 		LK_Region temporary_memory;
-	constexpr 	LK_Region* temp = &temporary_memory;
-#endif
 
 template <typename T>
 struct SLList

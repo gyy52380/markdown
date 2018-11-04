@@ -2,19 +2,14 @@
 #include <stdio.h>
 
 #include "typedef.h"
+#include "memory.h"
+
 #include "string.h"
-#include "lk_region.h"
 #include "list.h"
 
 #include "parser.h"
 
 #define DebugAssert(test) assert(test)
-
-#ifndef TEMPORARY_MEMORY
-#define TEMPORARY_MEMORY
-	extern 		LK_Region temporary_memory;
-	constexpr 	LK_Region* temp = &temporary_memory;
-#endif
 
 u32 count_leading_whitespace(String string)
 {
@@ -313,7 +308,7 @@ String parse(String input)
 		consume_line_preserve_whitespace(&input_cursor);
 
 	// open correct section based on first line
-	String line = scan_line_preserve_whitespace(input_cursor);
+	String line = peek_line_preserve_whitespace(input_cursor);
 	new_section_begin(&ctx, line);
 
 	while (input_cursor)

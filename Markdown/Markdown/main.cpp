@@ -4,9 +4,9 @@
 #include "string.h"
 #include "parser.h"
 
-#define LK_REGION_IMPLEMENTATION
-#include "lk_region.h"
-LK_Region temporary_memory = {};
+#define TEMP_MEMORY_IMPLEMENTATION
+#include "memory.h"
+
 
 int main(int argc, char* argv[])
 {
